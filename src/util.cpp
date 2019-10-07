@@ -90,6 +90,10 @@
 
 #define REL_PATH_TO_ROOT "../../"
 
+// Limits effort used to resolve typedefs
+const unsigned int resolveTypeDefsLimit = 2000000;
+
+
 //------------------------------------------------------------------------
 // TextGeneratorOLImpl implementation
 //------------------------------------------------------------------------
@@ -344,9 +348,11 @@ int guessSection(const char *name)
   return 0;
 }
 
-QCString resolveTypeDef(Definition *context,const QCString &qualifiedName,
+QCString resolveTypeDef(unsigned int *counter, Definition *context,const QCString &qualifiedName,
                         Definition **typedefContext)
 {
+  *counter += 1;
+
   //printf("<<resolveTypeDef(%s,%s)\n",
   //          context ? context->name().data() : "<none>",qualifiedName.data());
   QCString result;
@@ -389,7 +395,7 @@ QCString resolveTypeDef(Definition *context,const QCString &qualifiedName,
       while ((is=getScopeFragment(resScopeName,ps,&l))!=-1)
       {
         QCString qualScopePart = resScopeName.mid(is,l);
-        QCString tmp = resolveTypeDef(mContext,qualScopePart);
+        QCString tmp = resolveTypeDef(counter, mContext,qualScopePart);
         if (!tmp.isEmpty()) qualScopePart=tmp;
         resScope = resScope->findInnerCompound(qualScopePart);
         //printf("qualScopePart=`%s' resScope=%p\n",qualScopePart.data(),resScope);
@@ -397,6 +403,15 @@ QCString resolveTypeDef(Definition *context,const QCString &qualifiedName,
         ps=is+l;
       }
     }
+
+    if (*counter >= resolveTypeDefsLimit)
+    {
+      printf("     resolveTypeDef(%s,%s) Recursion call limit %u exceeded. Resolve aborted.\n",
+            context ? context->name().data() : "<none>", qualifiedName.data(),
+            resolveTypeDefsLimit);
+      return result;
+    }
+
     //printf("resScope=%s\n",resScope?resScope->name().data():"<none>");
     
     // step 2: get the member
@@ -3445,7 +3460,8 @@ QCString getCanonicalTemplateSpec(Definition *d,FileDef *fs,const QCString& spec
   {
     templSpec = "< " + extractCanonicalType(d,fs,templSpec.right(templSpec.length()-1).stripWhiteSpace());
   }
-  QCString resolvedType = resolveTypeDef(d,templSpec);
+  unsigned int counter = 0;
+  QCString resolvedType = resolveTypeDef(&counter, d,templSpec);
   if (!resolvedType.isEmpty()) // not known as a typedef either
   {
     templSpec = resolvedType;
@@ -3577,7 +3593,8 @@ static QCString getCanonicalTypeForIdentifier(
   }
   else // fallback
   {
-    resolvedType = resolveTypeDef(d,word);
+    unsigned int counter = 0;
+    resolvedType = resolveTypeDef(&counter, d,word);
     //printf("typedef [%s]->[%s]\n",word.data(),resolvedType.data());
     if (resolvedType.isEmpty()) // not known as a typedef either
     {
